@@ -41,7 +41,6 @@ class PdfGenerator {
     final parentName = studentData['parent_name']?.toString() ?? 'غير مسجل';
     final parentPhone = studentData['parent_phone']?.toString() ?? 'غير مسجل';
     final school = studentData['school']?.toString() ?? 'غير مسجل';
-    final notes = studentData['notes']?.toString() ?? 'لا توجد ملاحظات';
 
     // Attendance stats
     final att = (studentData['attendance_stats'] as Map<String, dynamic>?) ?? {};
@@ -179,29 +178,11 @@ class PdfGenerator {
                   return [
                     date,
                     '$percentage%',
-                    '$score / $total', // Handled LTR issue natively or might need bidi
+                    '$score / $total',
                     '$title ($category)',
                   ];
                 }).toList(),
               ),
-
-            pw.SizedBox(height: 24),
-            pw.Text(
-              'ملاحظات وتوجيهات المعلم',
-              style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold, color: const PdfColor.fromInt(0xff4f46e5)),
-            ),
-            pw.SizedBox(height: 8),
-            pw.Container(
-              width: double.infinity,
-              height: 60,
-              padding: const pw.EdgeInsets.all(12),
-              decoration: pw.BoxDecoration(
-                color: PdfColors.grey100,
-                border: pw.Border.all(color: PdfColors.grey300),
-                borderRadius: const pw.BorderRadius.all(pw.Radius.circular(8)),
-              ),
-              child: pw.Text(notes),
-            ),
           ];
         },
       ),

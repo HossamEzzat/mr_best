@@ -25,8 +25,6 @@ class _StudentProfileScreenState extends ConsumerState<StudentProfileScreen> wit
   List<Map<String, dynamic>> _gradesList = [];
   List<Map<String, dynamic>> _attendanceList = [];
   bool _isLoading = true;
-  final _notesController = TextEditingController();
-  bool _isSavingNotes = false;
 
   @override
   void initState() {
@@ -38,7 +36,6 @@ class _StudentProfileScreenState extends ConsumerState<StudentProfileScreen> wit
   @override
   void dispose() {
     _tabController.dispose();
-    _notesController.dispose();
     super.dispose();
   }
 
@@ -58,7 +55,7 @@ class _StudentProfileScreenState extends ConsumerState<StudentProfileScreen> wit
         _attendanceList = attendance;
         _isLoading = false;
         if (overview != null) {
-          _notesController.text = overview['notes'] ?? '';
+          // Additional initialization if needed
         }
       });
     } catch (e) {
@@ -69,34 +66,6 @@ class _StudentProfileScreenState extends ConsumerState<StudentProfileScreen> wit
     }
   }
 
-  Future<void> _saveNotes() async {
-    if (_studentOverview == null) return;
-    setState(() => _isSavingNotes = true);
-
-    try {
-      final repo = ref.read(studentRepositoryProvider);
-      final studentData = await repo.getStudentById(widget.studentId);
-      if (studentData != null) {
-        final updatedStudent = studentData.copyWith(
-          notes: _notesController.text.trim().isEmpty ? null : _notesController.text.trim(),
-        );
-        await repo.updateStudent(updatedStudent);
-        
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('تم حفظ الملاحظات بنجاح'), backgroundColor: AppColors.present),
-        );
-        
-        _studentOverview!['notes'] = updatedStudent.notes;
-        ref.invalidate(groupStudentsProvider(_studentOverview!['group_id'] as int));
-      }
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('فشل حفظ الملاحظات: $e'), backgroundColor: AppColors.absent),
-      );
-    } finally {
-      setState(() => _isSavingNotes = false);
-    }
-  }
 
   void _openPdfPreview() {
     if (_studentOverview == null) return;
@@ -267,42 +236,6 @@ class _StudentProfileScreenState extends ConsumerState<StudentProfileScreen> wit
             ),
 
             const SizedBox(height: 12),
-
-            // Notes section
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(12.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('ملاحظات وتوجيهات المعلم:', style: TextStyle(fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 8),
-                    TextField(
-                      controller: _notesController,
-                      maxLines: 2,
-                      decoration: const InputDecoration(
-                        hintText: 'اكتب ملاحظاتك عن مستوى الطالب هنا...',
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          minimumSize: const Size(120, 36),
-                          padding: const EdgeInsets.symmetric(horizontal: 16),
-                        ),
-                        onPressed: _isSavingNotes ? null : _saveNotes,
-                        child: _isSavingNotes
-                            ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                            : const Text('حفظ الملاحظة', style: TextStyle(fontSize: 12)),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
             const SizedBox(height: 16),
 
             // Tabs for Detailed Logs

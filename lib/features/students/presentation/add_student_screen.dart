@@ -25,7 +25,6 @@ class _AddStudentScreenState extends ConsumerState<AddStudentScreen> {
   final _parentNameController = TextEditingController();
   final _parentPhoneController = TextEditingController();
   final _schoolController = TextEditingController();
-  final _notesController = TextEditingController();
 
   List<GroupModel> _groupsList = [];
   int? _selectedGroupId;
@@ -59,7 +58,6 @@ class _AddStudentScreenState extends ConsumerState<AddStudentScreen> {
           _parentNameController.text = student.parentName ?? '';
           _parentPhoneController.text = student.parentPhone ?? '';
           _schoolController.text = student.school ?? '';
-          _notesController.text = student.notes ?? '';
           _selectedGroupId = student.groupId;
         } else {
           // pre-select group if provided
@@ -85,7 +83,6 @@ class _AddStudentScreenState extends ConsumerState<AddStudentScreen> {
     _parentNameController.dispose();
     _parentPhoneController.dispose();
     _schoolController.dispose();
-    _notesController.dispose();
     super.dispose();
   }
 
@@ -191,15 +188,7 @@ class _AddStudentScreenState extends ConsumerState<AddStudentScreen> {
                             prefixIcon: Icon(Icons.school),
                           ),
                         ),
-                        const SizedBox(height: 16),
-                        TextFormField(
-                          controller: _notesController,
-                          maxLines: 3,
-                          decoration: const InputDecoration(
-                            labelText: 'ملاحظات إضافية',
-                            prefixIcon: Icon(Icons.notes),
-                          ),
-                        ),
+
                         const SizedBox(height: 24),
                         ElevatedButton(
                           onPressed: _saveStudent,
@@ -223,7 +212,6 @@ class _AddStudentScreenState extends ConsumerState<AddStudentScreen> {
       parentName: _parentNameController.text.trim().isEmpty ? null : _parentNameController.text.trim(),
       parentPhone: _parentPhoneController.text.trim().isEmpty ? null : _parentPhoneController.text.trim(),
       school: _schoolController.text.trim().isEmpty ? null : _schoolController.text.trim(),
-      notes: _notesController.text.trim().isEmpty ? null : _notesController.text.trim(),
       createdAt: DateTime.now().toIso8601String(),
     );
 
