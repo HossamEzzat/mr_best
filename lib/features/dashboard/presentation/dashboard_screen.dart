@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../core/utils/responsive_layout.dart';
 import '../../groups/data/group_repository.dart';
 import '../../students/data/student_repository.dart';
 import '../../../core/database/database_helper.dart';
@@ -34,6 +35,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   Widget build(BuildContext context) {
     final statsAsync = ref.watch(dashboardStatsProvider);
     final topStudentsAsync = ref.watch(topStudentsProvider);
+    final isWide = !ResponsiveLayout.isMobile(context);
 
     return Scaffold(
       appBar: AppBar(
@@ -41,6 +43,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
+            tooltip: 'تحديث البيانات',
             onPressed: _refreshDashboard,
           ),
         ],
@@ -66,7 +69,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                   // Premium Gradient Welcome Banner
                   Container(
                     width: double.infinity,
-                    padding: const EdgeInsets.all(20),
+                    padding: const EdgeInsets.all(24),
                     decoration: BoxDecoration(
                       gradient: const LinearGradient(
                         colors: [AppColors.primaryDark, AppColors.primary],
@@ -89,17 +92,17 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                           'أهلاً بك يا مستر،',
                           style: TextStyle(color: Colors.white70, fontSize: 16, fontWeight: FontWeight.w500),
                         ),
-                        const SizedBox(height: 4),
+                        const SizedBox(height: 6),
                         const Text(
                           'متابعة أداء الطلاب بشغف ودقة 📐',
-                          style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
+                          style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold),
                         ),
                       ],
                     ),
                   ),
                   const SizedBox(height: 16),
 
-                  // Row 1: Students & Groups count
+                  // Responsive Stats Cards Row / Grid
                   Row(
                     children: [
                       Expanded(
@@ -123,164 +126,53 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                   ),
                   const SizedBox(height: 12),
 
-                  // Row 2: Today's Attendance
-                  Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(16.0),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'حضور وغياب اليوم',
-                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                          ),
-                          const SizedBox(height: 12),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceAround,
-                            children: [
-                              _buildAttendanceMiniCard('حاضر', '$presentToday', AppColors.present),
-                              _buildAttendanceMiniCard('متأخر', '$lateToday', AppColors.late),
-                              _buildAttendanceMiniCard('غائب', '$absentToday', AppColors.absent),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-
-                  // Row 3: Best Student Card
-                  Card(
-                    color: AppColors.primary.withOpacity(0.05),
-                    child: ListTile(
-                      leading: const CircleAvatar(
-                        backgroundColor: Colors.amber,
-                        child: Icon(Icons.emoji_events, color: Colors.white),
-                      ),
-                      title: const Text(
-                        'أفضل طالب حالياً (الأعلى نقاطاً)',
-                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.grey),
-                      ),
-                      subtitle: Text(
-                        bestStudent,
-                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: AppColors.primaryDark),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-
-                  // Group Performance Chart Card
-                  if (groupAverages.isNotEmpty) ...[
-                    Card(
-                      child: Padding(
-                        padding: const EdgeInsets.all(16.0),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              'متوسط درجات المجموعات (%)',
-                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                            ),
-                            const SizedBox(height: 16),
-                            ListView.builder(
-                              shrinkWrap: true,
-                              physics: const NeverScrollableScrollPhysics(),
-                              itemCount: groupAverages.length,
-                              itemBuilder: (context, index) {
-                                final item = groupAverages[index];
-                                final groupName = item['group_name'] as String;
-                                final avg = item['average'] as double;
-                                return Padding(
-                                  padding: const EdgeInsets.only(bottom: 12.0),
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Row(
-                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                        children: [
-                                          Text(groupName, style: const TextStyle(fontWeight: FontWeight.w600)),
-                                          Text('${avg.toStringAsFixed(1)}%', style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.primary)),
-                                        ],
-                                      ),
-                                      const SizedBox(height: 4),
-                                      ClipRRect(
-                                        borderRadius: BorderRadius.circular(4),
-                                        child: LinearProgressIndicator(
-                                          value: avg / 100,
-                                          backgroundColor: Colors.grey[200],
-                                          color: AppColors.primary,
-                                          minHeight: 10,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                );
-                              },
-                            ),
-                          ],
+                  // Today's Attendance & Best Student in Responsive Layout
+                  if (isWide)
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          flex: 3,
+                          child: _buildTodayAttendanceCard(presentToday, lateToday, absentToday),
                         ),
-                      ),
-                    ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          flex: 2,
+                          child: _buildBestStudentCard(bestStudent),
+                        ),
+                      ],
+                    )
+                  else ...[
+                    _buildTodayAttendanceCard(presentToday, lateToday, absentToday),
                     const SizedBox(height: 12),
+                    _buildBestStudentCard(bestStudent),
                   ],
 
-                  // Leaderboard Panel
-                  topStudentsAsync.when(
-                    data: (leaderboard) {
-                      if (leaderboard.isEmpty) return const SizedBox.shrink();
-                      return Card(
-                        child: Padding(
-                          padding: const EdgeInsets.all(16.0),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text(
-                                'ترتيب الطلاب الأوائل (المراكز الـ 5 الأولى)',
-                                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                              ),
-                              const SizedBox(height: 12),
-                              ListView.builder(
-                                shrinkWrap: true,
-                                physics: const NeverScrollableScrollPhysics(),
-                                itemCount: leaderboard.length,
-                                itemBuilder: (context, index) {
-                                  final student = leaderboard[index];
-                                  final name = student['name'];
-                                  final group = student['group_name'];
-                                  final points = student['total_points'];
-                                  final pct = (student['percentage'] as num?)?.toStringAsFixed(1) ?? '0';
+                  const SizedBox(height: 16),
 
-                                  return ListTile(
-                                    dense: true,
-                                    leading: CircleAvatar(
-                                      backgroundColor: index == 0
-                                          ? Colors.amber
-                                          : index == 1
-                                              ? Colors.grey[400]
-                                              : index == 2
-                                                  ? Colors.orange[300]
-                                                  : AppColors.primary.withOpacity(0.1),
-                                      foregroundColor: index < 3 ? Colors.white : AppColors.primary,
-                                      child: Text('${index + 1}'),
-                                    ),
-                                    title: Text(name, style: const TextStyle(fontWeight: FontWeight.bold)),
-                                    subtitle: Text(group),
-                                    trailing: Text(
-                                      '$points نقطة ($pct%)',
-                                      style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.primary),
-                                    ),
-                                    onTap: () => context.push('/students/profile/${student['id']}').then((_) => _refreshDashboard()),
-                                  );
-                                },
-                              ),
-                            ],
-                          ),
+                  // Responsive Split for Group Averages & Leaderboard
+                  if (isWide && groupAverages.isNotEmpty)
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          flex: 1,
+                          child: _buildGroupAveragesCard(groupAverages),
                         ),
-                      );
-                    },
-                    loading: () => const SizedBox.shrink(),
-                    error: (err, stack) => const SizedBox.shrink(),
-                  ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          flex: 1,
+                          child: _buildLeaderboardCard(topStudentsAsync),
+                        ),
+                      ],
+                    )
+                  else ...[
+                    if (groupAverages.isNotEmpty) ...[
+                      _buildGroupAveragesCard(groupAverages),
+                      const SizedBox(height: 12),
+                    ],
+                    _buildLeaderboardCard(topStudentsAsync),
+                  ],
                 ],
               );
             },
@@ -315,6 +207,182 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildTodayAttendanceCard(int presentToday, int lateToday, int absentToday) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'حضور وغياب اليوم',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                _buildAttendanceMiniCard('حاضر', '$presentToday', AppColors.present),
+                _buildAttendanceMiniCard('متأخر', '$lateToday', AppColors.late),
+                _buildAttendanceMiniCard('غائب', '$absentToday', AppColors.absent),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBestStudentCard(String bestStudent) {
+    return Card(
+      color: AppColors.primary.withOpacity(0.05),
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Row(
+              children: [
+                CircleAvatar(
+                  backgroundColor: Colors.amber,
+                  radius: 16,
+                  child: Icon(Icons.emoji_events, color: Colors.white, size: 20),
+                ),
+                SizedBox(width: 8),
+                Text(
+                  'أفضل طالب حالياً',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.grey),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Text(
+              bestStudent,
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: AppColors.primaryDark),
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              'صاحب أداء استثنائي وأعلى مجموع نقاط',
+              style: TextStyle(fontSize: 12, color: Colors.grey),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGroupAveragesCard(List<Map<String, dynamic>> groupAverages) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'متوسط درجات المجموعات (%)',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+            ),
+            const SizedBox(height: 16),
+            ListView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: groupAverages.length,
+              itemBuilder: (context, index) {
+                final item = groupAverages[index];
+                final groupName = item['group_name'] as String;
+                final avg = (item['average'] as num).toDouble();
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 12.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(groupName, style: const TextStyle(fontWeight: FontWeight.w600)),
+                          Text('${avg.toStringAsFixed(1)}%', style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.primary)),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(4),
+                        child: LinearProgressIndicator(
+                          value: (avg / 100).clamp(0.0, 1.0),
+                          backgroundColor: Colors.grey[200],
+                          color: AppColors.primary,
+                          minHeight: 10,
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLeaderboardCard(AsyncValue<List<Map<String, dynamic>>> topStudentsAsync) {
+    return topStudentsAsync.when(
+      data: (leaderboard) {
+        if (leaderboard.isEmpty) return const SizedBox.shrink();
+        return Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'ترتيب الطلاب الأوائل (المراكز الـ 5 الأولى)',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                ),
+                const SizedBox(height: 12),
+                ListView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  itemCount: leaderboard.length,
+                  itemBuilder: (context, index) {
+                    final student = leaderboard[index];
+                    final name = student['name'];
+                    final group = student['group_name'];
+                    final points = student['total_points'];
+                    final pct = (student['percentage'] as num?)?.toStringAsFixed(1) ?? '0';
+
+                    return ListTile(
+                      dense: true,
+                      leading: CircleAvatar(
+                        backgroundColor: index == 0
+                            ? Colors.amber
+                            : index == 1
+                                ? Colors.grey[400]
+                                : index == 2
+                                    ? Colors.orange[300]
+                                    : AppColors.primary.withOpacity(0.1),
+                        foregroundColor: index < 3 ? Colors.white : AppColors.primary,
+                        child: Text('${index + 1}'),
+                      ),
+                      title: Text(name, style: const TextStyle(fontWeight: FontWeight.bold)),
+                      subtitle: Text(group),
+                      trailing: Text(
+                        '$points نقطة ($pct%)',
+                        style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.primary),
+                      ),
+                      onTap: () => context.push('/students/profile/${student['id']}').then((_) => _refreshDashboard()),
+                    );
+                  },
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+      loading: () => const SizedBox.shrink(),
+      error: (err, stack) => const SizedBox.shrink(),
     );
   }
 

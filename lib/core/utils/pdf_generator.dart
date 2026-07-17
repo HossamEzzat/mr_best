@@ -1,273 +1,389 @@
 import 'dart:io';
-import 'package:printing/printing.dart';
+import 'dart:typed_data';
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 class PdfGenerator {
-  static Future<void> generateAndShareStudentReport(Map<String, dynamic> studentData) async {
-    final name = studentData['name'] as String;
-    final groupName = studentData['group_name'] as String;
-    final gradeLevel = studentData['grade_level'] as String;
-    final phone = studentData['phone'] ?? 'غير مسجل';
-    final parentName = studentData['parent_name'] ?? 'غير مسجل';
-    final parentPhone = studentData['parent_phone'] ?? 'غير مسجل';
-    final school = studentData['school'] ?? 'غير مسجل';
-    final notes = studentData['notes'] ?? 'لا توجد ملاحظات';
+  static pw.Font? _cairoRegular;
+  static pw.Font? _cairoBold;
+
+  /// Load fonts once
+  static Future<void> _loadFonts() async {
+    if (_cairoRegular == null) {
+      final regularData = await rootBundle.load('assets/fonts/Cairo-Regular.ttf');
+      _cairoRegular = pw.Font.ttf(regularData);
+    }
+    if (_cairoBold == null) {
+      final boldData = await rootBundle.load('assets/fonts/Cairo-Bold.ttf');
+      _cairoBold = pw.Font.ttf(boldData);
+    }
+  }
+
+  static pw.ThemeData _getTheme() {
+    return pw.ThemeData.withFont(
+      base: _cairoRegular,
+      bold: _cairoBold,
+    );
+  }
+
+  /// Generates Student Report PDF Bytes
+  static Future<Uint8List> generateStudentReportBytes(Map<String, dynamic> studentData) async {
+    await _loadFonts();
+
+    final name = studentData['name'] as String? ?? 'طالب';
+    final groupName = studentData['group_name'] as String? ?? 'المجموعة';
+    final gradeLevel = studentData['grade_level'] as String? ?? 'الصف';
+    final phone = studentData['phone']?.toString() ?? 'غير مسجل';
+    final parentName = studentData['parent_name']?.toString() ?? 'غير مسجل';
+    final parentPhone = studentData['parent_phone']?.toString() ?? 'غير مسجل';
+    final school = studentData['school']?.toString() ?? 'غير مسجل';
+    final notes = studentData['notes']?.toString() ?? 'لا توجد ملاحظات';
 
     // Attendance stats
-    final att = studentData['attendance_stats'] as Map<String, dynamic>;
-    final present = att['present'];
-    final absent = att['absent'];
-    final late = att['late'];
-    final totalSessions = att['total'];
-    final commitmentRate = (att['rate'] as num).toStringAsFixed(1);
+    final att = (studentData['attendance_stats'] as Map<String, dynamic>?) ?? {};
+    final present = att['present'] ?? 0;
+    final absent = att['absent'] ?? 0;
+    final late = att['late'] ?? 0;
+    final totalSessions = att['total'] ?? 0;
+    final commitmentRate = ((att['rate'] as num?) ?? 0).toStringAsFixed(1);
 
     // Grade stats
-    final grades = studentData['grade_stats'] as Map<String, dynamic>;
-    final earned = (grades['earned_points'] as num).toStringAsFixed(1);
-    final possible = (grades['possible_points'] as num).toStringAsFixed(1);
-    final pct = (grades['percentage'] as num).toStringAsFixed(1);
+    final grades = (studentData['grade_stats'] as Map<String, dynamic>?) ?? {};
+    final earned = ((grades['earned_points'] as num?) ?? 0).toStringAsFixed(1);
+    final possible = ((grades['possible_points'] as num?) ?? 0).toStringAsFixed(1);
+    final pct = ((grades['percentage'] as num?) ?? 0).toStringAsFixed(1);
 
     // Ranks
-    final ranks = studentData['ranks'] as Map<String, dynamic>;
-    final groupRank = ranks['group_rank'];
-    final gradeRank = ranks['grade_rank'];
+    final ranks = (studentData['ranks'] as Map<String, dynamic>?) ?? {};
+    final groupRank = ranks['group_rank'] ?? 1;
+    final gradeRank = ranks['grade_rank'] ?? 1;
 
-    // Load individual grades from DB for HTML table
-    final dbHelper = studentData['db_helper_instance']; // We pass this or we query it inside
     final List<Map<String, dynamic>> gradesList = studentData['grades_list'] ?? [];
-    
-    String gradesRows = '';
-    if (gradesList.isEmpty) {
-      gradesRows = '<tr><td colspan="4" style="text-align:center;">لا توجد درجات مسجلة</td></tr>';
-    } else {
-      for (final g in gradesList) {
-        final category = g['task_category'];
-        final title = g['task_title'];
-        final score = g['score'];
-        final total = g['task_total_score'];
-        final date = g['task_date'];
-        gradesRows += '''
-          <tr>
-            <td>$title ($category)</td>
-            <td style="text-align:center; direction:ltr;">$score / $total</td>
-            <td style="text-align:center;">${((score / total) * 100).toStringAsFixed(1)}%</td>
-            <td style="text-align:center;">$date</td>
-          </tr>
-        ''';
-      }
-    }
 
-    final htmlContent = '''
-<!DOCTYPE html>
-<html dir="rtl" lang="ar">
-<head>
-  <meta charset="utf-8">
-  <title>تقرير الطالب - مستر بيست</title>
-  <style>
-    @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;700&display=swap');
-    body {
-      font-family: 'Cairo', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-      margin: 0;
-      padding: 30px;
-      color: #1e293b;
-      background-color: #ffffff;
-      line-height: 1.6;
-    }
-    .header {
-      text-align: center;
-      border-bottom: 3px solid #6366f1;
-      padding-bottom: 15px;
-      margin-bottom: 25px;
-    }
-    .header h1 {
-      color: #4f46e5;
-      margin: 0;
-      font-size: 28px;
-    }
-    .header p {
-      color: #64748b;
-      margin: 5px 0 0 0;
-      font-size: 14px;
-    }
-    .section-title {
-      font-size: 18px;
-      font-weight: bold;
-      color: #4f46e5;
-      border-right: 4px solid #6366f1;
-      padding-right: 10px;
-      margin: 20px 0 10px 0;
-    }
-    .grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 15px;
-      margin-bottom: 20px;
-    }
-    .card {
-      background-color: #f8fafc;
-      border: 1px solid #e2e8f0;
-      border-radius: 8px;
-      padding: 15px;
-    }
-    .card-title {
-      font-weight: bold;
-      color: #334155;
-      margin-bottom: 8px;
-      border-bottom: 1px dashed #cbd5e1;
-      padding-bottom: 4px;
-    }
-    .info-row {
-      display: flex;
-      justify-content: space-between;
-      margin-bottom: 6px;
-      font-size: 14px;
-    }
-    .info-label {
-      color: #64748b;
-      font-weight: 500;
-    }
-    .info-value {
-      font-weight: bold;
-      color: #0f172a;
-    }
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      margin-top: 10px;
-      font-size: 13px;
-    }
-    th, td {
-      border: 1px solid #e2e8f0;
-      padding: 8px 10px;
-      text-align: right;
-    }
-    th {
-      background-color: #f1f5f9;
-      color: #334155;
-      font-weight: bold;
-    }
-    tr:nth-child(even) {
-      background-color: #f8fafc;
-    }
-    .badge {
-      display: inline-block;
-      padding: 3px 8px;
-      border-radius: 12px;
-      font-size: 12px;
-      font-weight: bold;
-      color: white;
-    }
-    .badge-present { background-color: #0d9488; }
-    .badge-absent { background-color: #e11d48; }
-    .badge-late { background-color: #d97706; }
-    .footer {
-      margin-top: 40px;
-      text-align: center;
-      font-size: 12px;
-      color: #94a3b8;
-      border-top: 1px solid #e2e8f0;
-      padding-top: 15px;
-    }
-    .highlight {
-      font-size: 18px;
-      color: #4f46e5;
-      font-weight: bold;
-    }
-  </style>
-</head>
-<body>
-  <div class="header">
-    <h1>تقرير الأداء الدراسي والالتزام</h1>
-    <p>مادة الرياضيات - تطبيق مستر بيست</p>
-  </div>
+    final pdf = pw.Document(theme: _getTheme());
 
-  <div class="grid">
-    <div class="card">
-      <div class="card-title">البيانات الشخصية</div>
-      <div class="info-row"><span class="info-label">اسم الطالب:</span><span class="info-value">$name</span></div>
-      <div class="info-row"><span class="info-label">المجموعة الدراسية:</span><span class="info-value">$groupName</span></div>
-      <div class="info-row"><span class="info-label">الصف الدراسي:</span><span class="info-value">$gradeLevel</span></div>
-      <div class="info-row"><span class="info-label">المدرسة:</span><span class="info-value">$school</span></div>
-    </div>
-    
-    <div class="card">
-      <div class="card-title">بيانات الاتصال</div>
-      <div class="info-row"><span class="info-label">رقم هاتف الطالب:</span><span class="info-value">$phone</span></div>
-      <div class="info-row"><span class="info-label">اسم ولي الأمر:</span><span class="info-value">$parentName</span></div>
-      <div class="info-row"><span class="info-label">رقم ولي الأمر:</span><span class="info-value">$parentPhone</span></div>
-    </div>
-  </div>
+    pdf.addPage(
+      pw.MultiPage(
+        pageFormat: PdfPageFormat.a4,
+        textDirection: pw.TextDirection.rtl,
+        margin: const pw.EdgeInsets.all(32),
+        header: (context) => pw.Column(
+          children: [
+            pw.Text(
+              'تقرير الأداء الدراسي والالتزام',
+              style: pw.TextStyle(fontSize: 24, fontWeight: pw.FontWeight.bold, color: const PdfColor.fromInt(0xff4f46e5)),
+            ),
+            pw.SizedBox(height: 4),
+            pw.Text(
+              'تطبيق مستر بيست (Mr. Best) لإدارة ومتابعة الطلاب',
+              style: const pw.TextStyle(fontSize: 12, color: PdfColors.grey700),
+            ),
+            pw.SizedBox(height: 12),
+            pw.Divider(color: const PdfColor.fromInt(0xff4f46e5), thickness: 2),
+            pw.SizedBox(height: 16),
+          ],
+        ),
+        footer: (context) => pw.Column(
+          children: [
+            pw.Divider(color: PdfColors.grey300),
+            pw.SizedBox(height: 8),
+            pw.Text(
+              'تم استخراج هذا التقرير تلقائياً عبر تطبيق مستر بيست (Mr. Best)',
+              style: const pw.TextStyle(fontSize: 10, color: PdfColors.grey600),
+              textAlign: pw.TextAlign.center,
+            ),
+          ],
+        ),
+        build: (context) {
+          return [
+            // Info Grids
+            pw.Row(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: [
+                pw.Expanded(
+                  child: _buildInfoCard('البيانات الشخصية', [
+                    _InfoRow('اسم الطالب:', name),
+                    _InfoRow('المجموعة:', groupName),
+                    _InfoRow('الصف الدراسي:', gradeLevel),
+                    _InfoRow('المدرسة:', school),
+                  ]),
+                ),
+                pw.SizedBox(width: 16),
+                pw.Expanded(
+                  child: _buildInfoCard('بيانات الاتصال', [
+                    _InfoRow('رقم الطالب:', phone, isLtr: true),
+                    _InfoRow('ولي الأمر:', parentName),
+                    _InfoRow('رقم ولي الأمر:', parentPhone, isLtr: true),
+                  ]),
+                ),
+              ],
+            ),
+            pw.SizedBox(height: 16),
+            pw.Row(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: [
+                pw.Expanded(
+                  child: _buildInfoCard('إحصائيات الغياب والحضور', [
+                    _InfoRow('إجمالي الجلسات:', '$totalSessions'),
+                    _InfoRow('الحضور:', '$present', valueColor: const PdfColor.fromInt(0xff0d9488)),
+                    _InfoRow('التأخير:', '$late', valueColor: const PdfColor.fromInt(0xffd97706)),
+                    _InfoRow('الغياب:', '$absent', valueColor: const PdfColor.fromInt(0xffe11d48)),
+                    _InfoRow('نسبة الالتزام:', '$commitmentRate%', isHighlight: true),
+                  ]),
+                ),
+                pw.SizedBox(width: 16),
+                pw.Expanded(
+                  child: _buildInfoCard('الدرجات والتحصيل العلمي', [
+                    _InfoRow('المجموع الكلي:', '$earned / $possible'),
+                    _InfoRow('النسبة المئوية:', '$pct%', isHighlight: true),
+                    _InfoRow('ترتيب المجموعة:', 'المركز $groupRank', valueColor: const PdfColor.fromInt(0xff4f46e5)),
+                    _InfoRow('الترتيب العام:', 'المركز $gradeRank', valueColor: const PdfColor.fromInt(0xff4f46e5)),
+                  ]),
+                ),
+              ],
+            ),
+            pw.SizedBox(height: 24),
 
-  <div class="grid">
-    <div class="card">
-      <div class="card-title">إحصائيات الغياب والحضور</div>
-      <div class="info-row"><span class="info-label">إجمالي الجلسات:</span><span class="info-value">$totalSessions</span></div>
-      <div class="info-row"><span class="info-label">عدد مرات الحضور:</span><span class="info-value" style="color: #0d9488;">$present</span></div>
-      <div class="info-row"><span class="info-label">عدد مرات التأخير:</span><span class="info-value" style="color: #d97706;">$late</span></div>
-      <div class="info-row"><span class="info-label">عدد مرات الغياب:</span><span class="info-value" style="color: #e11d48;">$absent</span></div>
-      <div class="info-row" style="margin-top:8px; border-top:1px dashed #cbd5e1; padding-top:4px; margin-bottom: 4px;"><span class="info-label">نسبة الالتزام:</span><span class="info-value highlight">$commitmentRate%</span></div>
-      <div style="background-color: #cbd5e1; border-radius: 4px; height: 6px; width: 100%; overflow: hidden;">
-        <div style="background-color: #0d9488; height: 100%; width: $commitmentRate%;"></div>
-      </div>
-    </div>
+            // Grades Table
+            pw.Text(
+              'تفاصيل درجات الطالب',
+              style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold, color: const PdfColor.fromInt(0xff4f46e5)),
+            ),
+            pw.SizedBox(height: 8),
+            if (gradesList.isEmpty)
+              pw.Container(
+                padding: const pw.EdgeInsets.all(12),
+                decoration: pw.BoxDecoration(border: pw.Border.all(color: PdfColors.grey300)),
+                child: pw.Center(child: pw.Text('لا توجد درجات مسجلة')),
+              )
+            else
+              pw.TableHelper.fromTextArray(
+                context: context,
+                border: pw.TableBorder.all(color: PdfColors.grey300),
+                headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold, color: PdfColors.grey800),
+                headerDecoration: const pw.BoxDecoration(color: PdfColors.grey200),
+                cellAlignment: pw.Alignment.center,
+                headers: ['التاريخ', 'النسبة', 'الدرجة / النهاية', 'التقييم / الاختبار'],
+                data: gradesList.map((g) {
+                  final category = g['task_category']?.toString() ?? '';
+                  final title = g['task_title']?.toString() ?? '';
+                  final score = g['score'] ?? 0;
+                  final total = g['task_total_score'] ?? 1;
+                  final date = g['task_date']?.toString() ?? '';
+                  final percentage = total > 0 ? ((score / total) * 100).toStringAsFixed(1) : '0';
+                  
+                  return [
+                    date,
+                    '$percentage%',
+                    '$score / $total', // Handled LTR issue natively or might need bidi
+                    '$title ($category)',
+                  ];
+                }).toList(),
+              ),
 
-    <div class="card">
-      <div class="card-title">الدرجات والتحصيل العلمي</div>
-      <div class="info-row"><span class="info-label">المجموع الكلي:</span><span class="info-value">$earned / $possible</span></div>
-      <div class="info-row"><span class="info-label">النسبة المئوية العامة:</span><span class="info-value highlight">$pct%</span></div>
-      <div style="background-color: #cbd5e1; border-radius: 4px; height: 6px; width: 100%; overflow: hidden; margin-bottom: 8px;">
-        <div style="background-color: #4f46e5; height: 100%; width: $pct%;"></div>
-      </div>
-      <div class="info-row" style="border-top:1px dashed #cbd5e1; padding-top:4px;"><span class="info-label">الترتيب داخل المجموعة:</span><span class="info-value" style="color: #4f46e5; font-weight: bold;">$groupRank</span></div>
-      <div class="info-row"><span class="info-label">الترتيب على الصف الدراسي:</span><span class="info-value" style="color: #4f46e5; font-weight: bold;">$gradeRank</span></div>
-    </div>
-  </div>
-
-  <div class="section-title">تفاصيل درجات الطالب</div>
-  <table>
-    <thead>
-      <tr>
-        <th>التقييم / الاختبار</th>
-        <th style="text-align:center;">الدرجة / النهاية</th>
-        <th style="text-align:center;">النسبة</th>
-        <th style="text-align:center;">التاريخ</th>
-      </tr>
-    </thead>
-    <tbody>
-      $gradesRows
-    </tbody>
-  </table>
-
-  <div class="section-title">ملاحظات وتوجيهات المعلم</div>
-  <div class="card" style="min-height: 80px;">
-    $notes
-  </div>
-
-  <div class="footer">
-    <p>تم استخراج هذا التقرير تلقائياً عبر تطبيق مستر بيست (Mr. Best) لإدارة الطلاب.</p>
-  </div>
-</body>
-</html>
-''';
-
-    // Layout and print report
-    final pdfBytes = await Printing.convertHtml(
-      html: htmlContent,
-      format: PdfPageFormat.a4,
+            pw.SizedBox(height: 24),
+            pw.Text(
+              'ملاحظات وتوجيهات المعلم',
+              style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold, color: const PdfColor.fromInt(0xff4f46e5)),
+            ),
+            pw.SizedBox(height: 8),
+            pw.Container(
+              width: double.infinity,
+              height: 60,
+              padding: const pw.EdgeInsets.all(12),
+              decoration: pw.BoxDecoration(
+                color: PdfColors.grey100,
+                border: pw.Border.all(color: PdfColors.grey300),
+                borderRadius: const pw.BorderRadius.all(pw.Radius.circular(8)),
+              ),
+              child: pw.Text(notes),
+            ),
+          ];
+        },
+      ),
     );
 
-    // Save PDF in temporary directory to share
+    return await pdf.save();
+  }
+
+  /// Generates Group Summary Report PDF Bytes
+  static Future<Uint8List> generateGroupReportBytes(Map<String, dynamic> groupData) async {
+    await _loadFonts();
+
+    final groupName = groupData['name'] as String? ?? 'المجموعة';
+    final gradeLevel = groupData['grade_level'] as String? ?? 'الصف';
+    final List<Map<String, dynamic>> students = groupData['students_list'] ?? [];
+    final int totalStudents = students.length;
+
+    final pdf = pw.Document(theme: _getTheme());
+
+    pdf.addPage(
+      pw.MultiPage(
+        pageFormat: PdfPageFormat.a4,
+        textDirection: pw.TextDirection.rtl,
+        margin: const pw.EdgeInsets.all(32),
+        header: (context) => pw.Column(
+          children: [
+            pw.Text(
+              'تقرير كشف ومستوى الطلاب بالكامل',
+              style: pw.TextStyle(fontSize: 24, fontWeight: pw.FontWeight.bold, color: const PdfColor.fromInt(0xff4f46e5)),
+            ),
+            pw.SizedBox(height: 4),
+            pw.Text(
+              'تطبيق مستر بيست (Mr. Best) • مجموعة $groupName ($gradeLevel)',
+              style: const pw.TextStyle(fontSize: 12, color: PdfColors.grey700),
+            ),
+            pw.SizedBox(height: 12),
+            pw.Divider(color: const PdfColor.fromInt(0xff4f46e5), thickness: 2),
+            pw.SizedBox(height: 16),
+          ],
+        ),
+        footer: (context) => pw.Column(
+          children: [
+            pw.Divider(color: PdfColors.grey300),
+            pw.SizedBox(height: 8),
+            pw.Text(
+              'تم استخراج كشف المجموعة تلقائياً عبر تطبيق مستر بيست (Mr. Best)',
+              style: const pw.TextStyle(fontSize: 10, color: PdfColors.grey600),
+              textAlign: pw.TextAlign.center,
+            ),
+          ],
+        ),
+        build: (context) {
+          return [
+            pw.Container(
+              padding: const pw.EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: pw.BoxDecoration(
+                color: PdfColors.grey100,
+                border: pw.Border.all(color: PdfColors.grey300),
+                borderRadius: const pw.BorderRadius.all(pw.Radius.circular(8)),
+              ),
+              child: pw.Row(
+                mainAxisAlignment: pw.MainAxisAlignment.spaceAround,
+                children: [
+                  pw.Text('اسم المجموعة: $groupName', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+                  pw.Text('الصف الدراسي: $gradeLevel', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+                  pw.Text('عدد الطلاب: $totalStudents طالب', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+                ],
+              ),
+            ),
+            pw.SizedBox(height: 16),
+
+            if (students.isEmpty)
+              pw.Container(
+                padding: const pw.EdgeInsets.all(12),
+                decoration: pw.BoxDecoration(border: pw.Border.all(color: PdfColors.grey300)),
+                child: pw.Center(child: pw.Text('لا يوجد طلاب بالمجموعة')),
+              )
+            else
+              pw.TableHelper.fromTextArray(
+                context: context,
+                border: pw.TableBorder.all(color: PdfColors.grey300),
+                headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold, color: PdfColors.grey800),
+                headerDecoration: const pw.BoxDecoration(color: PdfColors.grey200),
+                cellAlignment: pw.Alignment.center,
+                headers: ['النسبة العامة', 'نسبة الحضور', 'رقم الهاتف', 'اسم الطالب', '#'],
+                data: List.generate(students.length, (index) {
+                  final s = students[index];
+                  final sName = s['name']?.toString() ?? '';
+                  final sPhone = s['phone']?.toString() ?? 'غير مسجل';
+                  final attRate = ((s['attendance_rate'] as num?) ?? 0).toStringAsFixed(1);
+                  final gradePct = ((s['grade_percentage'] as num?) ?? 0).toStringAsFixed(1);
+                  return [
+                    '$gradePct%',
+                    '$attRate%',
+                    sPhone, // Bidi might be needed here too
+                    sName,
+                    '${index + 1}',
+                  ];
+                }),
+              ),
+          ];
+        },
+      ),
+    );
+
+    return await pdf.save();
+  }
+
+  static pw.Widget _buildInfoCard(String title, List<_InfoRow> rows) {
+    return pw.Container(
+      padding: const pw.EdgeInsets.all(12),
+      decoration: pw.BoxDecoration(
+        color: PdfColors.grey100,
+        border: pw.Border.all(color: PdfColors.grey300),
+        borderRadius: const pw.BorderRadius.all(pw.Radius.circular(8)),
+      ),
+      child: pw.Column(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        children: [
+          pw.Text(title, style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold, color: PdfColors.grey800)),
+          pw.SizedBox(height: 4),
+          pw.Divider(color: PdfColors.grey300),
+          pw.SizedBox(height: 6),
+          ...rows.map((r) => pw.Padding(
+                padding: const pw.EdgeInsets.only(bottom: 6),
+                child: pw.Row(
+                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                  children: [
+                    pw.Text(r.label, style: const pw.TextStyle(color: PdfColors.grey700)),
+                    pw.Text(
+                      r.value,
+                      textDirection: r.isLtr ? pw.TextDirection.ltr : pw.TextDirection.rtl,
+                      style: pw.TextStyle(
+                        fontWeight: pw.FontWeight.bold,
+                        color: r.isHighlight ? const PdfColor.fromInt(0xff4f46e5) : (r.valueColor ?? PdfColors.black),
+                      ),
+                    ),
+                  ],
+                ),
+              )),
+        ],
+      ),
+    );
+  }
+
+  /// Direct Share Student Report
+  static Future<void> generateAndShareStudentReport(Map<String, dynamic> studentData) async {
+    final pdfBytes = await generateStudentReportBytes(studentData);
+    final name = studentData['name'] as String? ?? 'طالب';
     final directory = await getTemporaryDirectory();
     final pdfPath = '${directory.path}/تقرير_الطالب_${name.replaceAll(' ', '_')}.pdf';
     final file = File(pdfPath);
     await file.writeAsBytes(pdfBytes);
 
-    // Share PDF
     await Share.shareXFiles(
       [XFile(pdfPath)],
-      text: 'تقرير الأداء الدراسي للطالب: $name في مادة الرياضيات',
+      subject: 'تقرير الأداء الدراسي للطالب: $name',
     );
   }
+
+  /// Direct Share Group Report
+  static Future<void> generateAndShareGroupReport(Map<String, dynamic> groupData) async {
+    final pdfBytes = await generateGroupReportBytes(groupData);
+    final groupName = groupData['name'] as String? ?? 'مجموعة';
+    final directory = await getTemporaryDirectory();
+    final pdfPath = '${directory.path}/تقرير_المجموعة_${groupName.replaceAll(' ', '_')}.pdf';
+    final file = File(pdfPath);
+    await file.writeAsBytes(pdfBytes);
+
+    await Share.shareXFiles(
+      [XFile(pdfPath)],
+      subject: 'كشف درجات وحضور مجموعة: $groupName',
+    );
+  }
+}
+
+class _InfoRow {
+  final String label;
+  final String value;
+  final bool isLtr;
+  final bool isHighlight;
+  final PdfColor? valueColor;
+
+  _InfoRow(this.label, this.value, {this.isLtr = false, this.isHighlight = false, this.valueColor});
 }

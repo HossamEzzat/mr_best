@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart' hide TextDirection;
+import 'package:pdf/pdf.dart';
 import '../data/group_repository.dart';
 import '../../students/data/student_repository.dart';
 import '../../attendance/data/attendance_repository.dart';
@@ -9,6 +10,8 @@ import '../../grades/data/grades_repository.dart';
 import '../../attendance/domain/session_model.dart';
 import '../../grades/domain/task_model.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../core/utils/pdf_generator.dart';
+import '../../../core/utils/responsive_layout.dart';
 
 // Additional provider for students of this group
 final groupStudentsProvider = FutureProvider.family<List<Map<String, dynamic>>, int>((ref, groupId) async {
@@ -40,22 +43,67 @@ class _GroupDetailsScreenState extends ConsumerState<GroupDetailsScreen> with Si
     super.dispose();
   }
 
+  Future<void> _openGroupPdfPreview() async {
+    final repo = ref.read(groupRepositoryProvider);
+    final groupData = await repo.getGroupReportData(widget.groupId);
+    final groupName = groupData['name'] as String? ?? 'المجموعة';
+
+    if (!mounted) return;
+    context.push(
+      '/pdf/preview',
+      extra: {
+        'title': 'كشف تقرير المجموعة: $groupName',
+        'fileName': 'تقرير_مجموعة_${groupName.replaceAll(' ', '_')}.pdf',
+        'buildPdf': (PdfPageFormat format) async => await PdfGenerator.generateGroupReportBytes(groupData),
+      },
+    );
+  }
+
+  Future<void> _shareGroupPdf() async {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('جاري تجهيز كشف المجموعة للمشاركة...'), duration: Duration(seconds: 1)),
+    );
+    try {
+      final repo = ref.read(groupRepositoryProvider);
+      final groupData = await repo.getGroupReportData(widget.groupId);
+      await PdfGenerator.generateAndShareGroupReport(groupData);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('فشل مشاركة التقرير: $e'), backgroundColor: AppColors.absent),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final groupAsync = ref.watch(groupsListProvider);
 
-    // Find our specific group to display title
-    final groupName = groupAsync.maybeWhen(
+    final Map<String, dynamic> groupInfo = groupAsync.maybeWhen(
       data: (list) {
-        final g = list.firstWhere((element) => element['id'] == widget.groupId, orElse: () => <String, dynamic>{});
-        return g['name'] as String? ?? 'تفاصيل المجموعة';
+        return list.firstWhere((element) => element['id'] == widget.groupId, orElse: () => <String, dynamic>{});
       },
-      orElse: () => 'تفاصيل المجموعة',
+      orElse: () => <String, dynamic>{},
     );
+
+    final groupName = groupInfo['name'] as String? ?? 'تفاصيل المجموعة';
 
     return Scaffold(
       appBar: AppBar(
         title: Text(groupName),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.picture_as_pdf),
+            tooltip: 'معاينة PDF للمجموعة',
+            onPressed: _openGroupPdfPreview,
+          ),
+          IconButton(
+            icon: const Icon(Icons.share, color: Colors.blue),
+            tooltip: 'مشاركة كشف المجموعة',
+            onPressed: _shareGroupPdf,
+          ),
+        ],
         bottom: TabBar(
           controller: _tabController,
           labelColor: AppColors.primary,
@@ -113,51 +161,75 @@ class _GroupDetailsScreenState extends ConsumerState<GroupDetailsScreen> with Si
           );
         }
 
+        final crossAxisCount = ResponsiveLayout.getGridCrossAxisCount(context, mobile: 1, tablet: 2, desktop: 3);
+
         return Scaffold(
-          floatingActionButton: FloatingActionButton(
+          floatingActionButton: FloatingActionButton.extended(
             heroTag: 'add_student_btn',
             onPressed: () => context.push('/students/add?groupId=${widget.groupId}'),
             backgroundColor: AppColors.primary,
             foregroundColor: Colors.white,
-            child: const Icon(Icons.person_add),
+            icon: const Icon(Icons.person_add),
+            label: const Text('إضافة طالب'),
           ),
-          body: ListView.builder(
-            padding: const EdgeInsets.all(16),
-            itemCount: students.length,
-            itemBuilder: (context, index) {
-              final student = students[index];
-              final id = student['id'] as int;
-              final name = student['name'] as String;
-              final phone = student['phone'] as String? ?? '';
-              final school = student['school'] as String? ?? '';
-
-              return Card(
-                margin: const EdgeInsets.only(bottom: 8),
-                child: ListTile(
-                  title: Text(name, style: const TextStyle(fontWeight: FontWeight.bold)),
-                  subtitle: Text('$school ${phone.isNotEmpty ? "• $phone" : ""}'),
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.edit, color: Colors.blue, size: 20),
-                        onPressed: () => context.push('/students/edit/$id'),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.delete, color: AppColors.absent, size: 20),
-                        onPressed: () => _confirmDeleteStudent(id, name),
-                      ),
-                    ],
+          body: crossAxisCount > 1
+              ? GridView.builder(
+                  padding: const EdgeInsets.all(16),
+                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: crossAxisCount,
+                    crossAxisSpacing: 12,
+                    mainAxisSpacing: 12,
+                    childAspectRatio: 2.8,
                   ),
-                  onTap: () => context.push('/students/profile/$id'),
+                  itemCount: students.length,
+                  itemBuilder: (context, index) {
+                    return _buildStudentItemCard(students[index]);
+                  },
+                )
+              : ListView.builder(
+                  padding: const EdgeInsets.all(16),
+                  itemCount: students.length,
+                  itemBuilder: (context, index) {
+                    return _buildStudentItemCard(students[index]);
+                  },
                 ),
-              );
-            },
-          ),
         );
       },
       loading: () => const Center(child: CircularProgressIndicator()),
       error: (err, stack) => Center(child: Text('حدث خطأ: $err')),
+    );
+  }
+
+  Widget _buildStudentItemCard(Map<String, dynamic> student) {
+    final id = student['id'] as int;
+    final name = student['name'] as String;
+    final phone = student['phone'] as String? ?? '';
+    final school = student['school'] as String? ?? '';
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      child: ListTile(
+        leading: CircleAvatar(
+          backgroundColor: AppColors.primary.withOpacity(0.1),
+          child: const Icon(Icons.person, color: AppColors.primary),
+        ),
+        title: Text(name, style: const TextStyle(fontWeight: FontWeight.bold)),
+        subtitle: Text('$school ${phone.isNotEmpty ? "• $phone" : ""}'),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IconButton(
+              icon: const Icon(Icons.edit, color: Colors.blue, size: 20),
+              onPressed: () => context.push('/students/edit/$id'),
+            ),
+            IconButton(
+              icon: const Icon(Icons.delete, color: AppColors.absent, size: 20),
+              onPressed: () => _confirmDeleteStudent(id, name),
+            ),
+          ],
+        ),
+        onTap: () => context.push('/students/profile/$id'),
+      ),
     );
   }
 
@@ -180,7 +252,7 @@ class _GroupDetailsScreenState extends ConsumerState<GroupDetailsScreen> with Si
                 onPressed: () async {
                   await ref.read(studentRepositoryProvider).deleteStudent(id);
                   ref.invalidate(groupStudentsProvider(widget.groupId));
-                  ref.invalidate(groupsListProvider); // Updates dashboard/group stats
+                  ref.invalidate(groupsListProvider);
                   if (context.mounted) Navigator.pop(context);
                 },
                 child: const Text('حذف'),
@@ -198,6 +270,8 @@ class _GroupDetailsScreenState extends ConsumerState<GroupDetailsScreen> with Si
 
     return sessionsAsync.when(
       data: (sessions) {
+        final crossAxisCount = ResponsiveLayout.getGridCrossAxisCount(context, mobile: 1, tablet: 2, desktop: 3);
+
         return Scaffold(
           floatingActionButton: FloatingActionButton.extended(
             heroTag: 'add_session_btn',
@@ -214,39 +288,52 @@ class _GroupDetailsScreenState extends ConsumerState<GroupDetailsScreen> with Si
                     style: TextStyle(color: Colors.grey, fontSize: 16),
                   ),
                 )
-              : ListView.builder(
-                  padding: const EdgeInsets.all(16),
-                  itemCount: sessions.length,
-                  itemBuilder: (context, index) {
-                    final session = sessions[index];
-                    return Card(
-                      margin: const EdgeInsets.only(bottom: 8),
-                      child: ListTile(
-                        leading: const CircleAvatar(
-                          backgroundColor: AppColors.tealOffset,
-                          child: Icon(Icons.calendar_month, color: AppColors.present),
-                        ),
-                        title: Text(session.title ?? 'جلسة حضور', style: const TextStyle(fontWeight: FontWeight.bold)),
-                        subtitle: Text(session.sessionDate),
-                        trailing: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            IconButton(
-                              icon: const Icon(Icons.delete, color: AppColors.absent, size: 20),
-                              onPressed: () => _confirmDeleteSession(session.id!, session.title ?? 'هذه الجلسة'),
-                            ),
-                            const Icon(Icons.arrow_back_ios, size: 14), // RTL arrow
-                          ],
-                        ),
-                        onTap: () => context.push('/attendance/take/${widget.groupId}/${session.id}'),
+              : crossAxisCount > 1
+                  ? GridView.builder(
+                      padding: const EdgeInsets.all(16),
+                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: crossAxisCount,
+                        crossAxisSpacing: 12,
+                        mainAxisSpacing: 12,
+                        childAspectRatio: 2.8,
                       ),
-                    );
-                  },
-                ),
+                      itemCount: sessions.length,
+                      itemBuilder: (context, index) => _buildSessionCard(sessions[index]),
+                    )
+                  : ListView.builder(
+                      padding: const EdgeInsets.all(16),
+                      itemCount: sessions.length,
+                      itemBuilder: (context, index) => _buildSessionCard(sessions[index]),
+                    ),
         );
       },
       loading: () => const Center(child: CircularProgressIndicator()),
       error: (err, stack) => Center(child: Text('حدث خطأ: $err')),
+    );
+  }
+
+  Widget _buildSessionCard(SessionModel session) {
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      child: ListTile(
+        leading: const CircleAvatar(
+          backgroundColor: AppColors.tealOffset,
+          child: Icon(Icons.calendar_month, color: AppColors.present),
+        ),
+        title: Text(session.title ?? 'جلسة حضور', style: const TextStyle(fontWeight: FontWeight.bold)),
+        subtitle: Text(session.sessionDate),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IconButton(
+              icon: const Icon(Icons.delete, color: AppColors.absent, size: 20),
+              onPressed: () => _confirmDeleteSession(session.id!, session.title ?? 'هذه الجلسة'),
+            ),
+            const Icon(Icons.arrow_back_ios, size: 14),
+          ],
+        ),
+        onTap: () => context.push('/attendance/take/${widget.groupId}/${session.id}'),
+      ),
     );
   }
 
@@ -357,6 +444,8 @@ class _GroupDetailsScreenState extends ConsumerState<GroupDetailsScreen> with Si
 
     return tasksAsync.when(
       data: (tasks) {
+        final crossAxisCount = ResponsiveLayout.getGridCrossAxisCount(context, mobile: 1, tablet: 2, desktop: 3);
+
         return Scaffold(
           floatingActionButton: FloatingActionButton.extended(
             heroTag: 'add_task_btn',
@@ -373,39 +462,52 @@ class _GroupDetailsScreenState extends ConsumerState<GroupDetailsScreen> with Si
                     style: TextStyle(color: Colors.grey, fontSize: 16),
                   ),
                 )
-              : ListView.builder(
-                  padding: const EdgeInsets.all(16),
-                  itemCount: tasks.length,
-                  itemBuilder: (context, index) {
-                    final task = tasks[index];
-                    return Card(
-                      margin: const EdgeInsets.only(bottom: 8),
-                      child: ListTile(
-                        leading: CircleAvatar(
-                          backgroundColor: AppColors.getCategoryColor(task.category).withOpacity(0.2),
-                          child: Icon(Icons.assessment, color: AppColors.getCategoryColor(task.category)),
-                        ),
-                        title: Text(task.title, style: const TextStyle(fontWeight: FontWeight.bold)),
-                        subtitle: Text('${task.category} • الدرجة النهائية: ${task.totalScore}'),
-                        trailing: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            IconButton(
-                              icon: const Icon(Icons.delete, color: AppColors.absent, size: 20),
-                              onPressed: () => _confirmDeleteTask(task.id!, task.title),
-                            ),
-                            const Icon(Icons.arrow_back_ios, size: 14),
-                          ],
-                        ),
-                        onTap: () => context.push('/grades/take/${widget.groupId}/${task.id}'),
+              : crossAxisCount > 1
+                  ? GridView.builder(
+                      padding: const EdgeInsets.all(16),
+                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: crossAxisCount,
+                        crossAxisSpacing: 12,
+                        mainAxisSpacing: 12,
+                        childAspectRatio: 2.8,
                       ),
-                    );
-                  },
-                ),
+                      itemCount: tasks.length,
+                      itemBuilder: (context, index) => _buildTaskCard(tasks[index]),
+                    )
+                  : ListView.builder(
+                      padding: const EdgeInsets.all(16),
+                      itemCount: tasks.length,
+                      itemBuilder: (context, index) => _buildTaskCard(tasks[index]),
+                    ),
         );
       },
       loading: () => const Center(child: CircularProgressIndicator()),
       error: (err, stack) => Center(child: Text('حدث خطأ: $err')),
+    );
+  }
+
+  Widget _buildTaskCard(TaskModel task) {
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      child: ListTile(
+        leading: CircleAvatar(
+          backgroundColor: AppColors.getCategoryColor(task.category).withOpacity(0.2),
+          child: Icon(Icons.assessment, color: AppColors.getCategoryColor(task.category)),
+        ),
+        title: Text(task.title, style: const TextStyle(fontWeight: FontWeight.bold)),
+        subtitle: Text('${task.category} • النهاية: ${task.totalScore}'),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IconButton(
+              icon: const Icon(Icons.delete, color: AppColors.absent, size: 20),
+              onPressed: () => _confirmDeleteTask(task.id!, task.title),
+            ),
+            const Icon(Icons.arrow_back_ios, size: 14),
+          ],
+        ),
+        onTap: () => context.push('/grades/take/${widget.groupId}/${task.id}'),
+      ),
     );
   }
 

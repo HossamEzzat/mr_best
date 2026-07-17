@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import '../data/group_repository.dart';
 import '../domain/group_model.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../core/utils/responsive_layout.dart';
 
 class GroupsScreen extends ConsumerWidget {
   const GroupsScreen({super.key});
@@ -47,61 +48,29 @@ class GroupsScreen extends ConsumerWidget {
               );
             }
 
+            final crossAxisCount = ResponsiveLayout.getGridCrossAxisCount(context, mobile: 1, tablet: 2, desktop: 3);
+
+            if (crossAxisCount > 1) {
+              return GridView.builder(
+                padding: const EdgeInsets.all(16),
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: crossAxisCount,
+                  crossAxisSpacing: 12,
+                  mainAxisSpacing: 12,
+                  childAspectRatio: 2.4,
+                ),
+                itemCount: groups.length,
+                itemBuilder: (context, index) {
+                  return _buildGroupCard(context, ref, groups[index]);
+                },
+              );
+            }
+
             return ListView.builder(
               padding: const EdgeInsets.all(16),
               itemCount: groups.length,
               itemBuilder: (context, index) {
-                final group = groups[index];
-                final id = group['id'] as int;
-                final name = group['name'] as String;
-                final gradeLevel = group['grade_level'] as String;
-                final count = group['student_count'] as int;
-
-                return Card(
-                  margin: const EdgeInsets.only(bottom: 12),
-                  child: ListTile(
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                    title: Text(
-                      name,
-                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
-                    ),
-                    subtitle: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const SizedBox(height: 4),
-                        Text(
-                          gradeLevel,
-                          style: TextStyle(color: Colors.grey[600], fontSize: 14),
-                        ),
-                        const SizedBox(height: 4),
-                        Row(
-                          children: [
-                            const Icon(Icons.people, size: 16, color: AppColors.primary),
-                            const SizedBox(width: 4),
-                            Text(
-                              '$count طالب',
-                              style: const TextStyle(color: AppColors.primary, fontWeight: FontWeight.bold),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                    trailing: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        IconButton(
-                          icon: const Icon(Icons.edit, color: Colors.blue),
-                          onPressed: () => _showGroupDialog(context, ref, id: id, currentName: name, currentGrade: gradeLevel),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.delete, color: AppColors.absent),
-                          onPressed: () => _showDeleteConfirmation(context, ref, id, name),
-                        ),
-                      ],
-                    ),
-                    onTap: () => context.push('/groups/$id'),
-                  ),
-                );
+                return _buildGroupCard(context, ref, groups[index]);
               },
             );
           },
@@ -115,6 +84,59 @@ class GroupsScreen extends ConsumerWidget {
         icon: const Icon(Icons.add),
         backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
+      ),
+    );
+  }
+
+  Widget _buildGroupCard(BuildContext context, WidgetRef ref, Map<String, dynamic> group) {
+    final id = group['id'] as int;
+    final name = group['name'] as String;
+    final gradeLevel = group['grade_level'] as String;
+    final count = group['student_count'] as int;
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        title: Text(
+          name,
+          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+        ),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const SizedBox(height: 4),
+            Text(
+              gradeLevel,
+              style: TextStyle(color: Colors.grey[600], fontSize: 14),
+            ),
+            const SizedBox(height: 4),
+            Row(
+              children: [
+                const Icon(Icons.people, size: 16, color: AppColors.primary),
+                const SizedBox(width: 4),
+                Text(
+                  '$count طالب',
+                  style: const TextStyle(color: AppColors.primary, fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
+          ],
+        ),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IconButton(
+              icon: const Icon(Icons.edit, color: Colors.blue),
+              onPressed: () => _showGroupDialog(context, ref, id: id, currentName: name, currentGrade: gradeLevel),
+            ),
+            IconButton(
+              icon: const Icon(Icons.delete, color: AppColors.absent),
+              onPressed: () => _showDeleteConfirmation(context, ref, id, name),
+            ),
+          ],
+        ),
+        onTap: () => context.push('/groups/$id'),
       ),
     );
   }
@@ -241,8 +263,7 @@ class GroupsScreen extends ConsumerWidget {
                   foregroundColor: Colors.white,
                 ),
                 onPressed: () async {
-                  final repo = ref.read(groupRepositoryProvider);
-                  await repo.deleteGroup(id);
+                  await ref.read(groupRepositoryProvider).deleteGroup(id);
                   ref.invalidate(groupsListProvider);
                   if (context.mounted) Navigator.pop(context);
                 },

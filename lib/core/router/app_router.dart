@@ -1,5 +1,7 @@
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:pdf/pdf.dart';
 import '../../features/navigation/main_navigation_wrapper.dart';
 import '../../features/groups/presentation/groups_screen.dart';
 import '../../features/groups/presentation/group_details_screen.dart';
@@ -8,6 +10,7 @@ import '../../features/students/presentation/add_student_screen.dart';
 import '../../features/attendance/presentation/take_attendance_screen.dart';
 import '../../features/grades/presentation/enter_grades_screen.dart';
 import '../../features/settings/presentation/settings_screen.dart';
+import '../../features/pdf/presentation/pdf_preview_screen.dart';
 
 final GoRouter appRouter = GoRouter(
   initialLocation: '/',
@@ -32,7 +35,6 @@ final GoRouter appRouter = GoRouter(
     GoRoute(
       path: '/students/add',
       builder: (context, state) {
-        // Can optionally pass pre-selected groupId
         final groupIdStr = state.uri.queryParameters['groupId'];
         final groupId = groupIdStr != null ? int.tryParse(groupIdStr) : null;
         return AddStudentScreen(groupId: groupId);
@@ -71,6 +73,20 @@ final GoRouter appRouter = GoRouter(
     GoRoute(
       path: '/settings',
       builder: (context, state) => const SettingsScreen(),
+    ),
+    GoRoute(
+      path: '/pdf/preview',
+      builder: (context, state) {
+        final extra = state.extra as Map<String, dynamic>;
+        final title = extra['title'] as String;
+        final pdfFileName = extra['fileName'] as String;
+        final buildPdf = extra['buildPdf'] as Future<Uint8List> Function(PdfPageFormat format);
+        return PdfPreviewScreen(
+          title: title,
+          pdfFileName: pdfFileName,
+          buildPdf: buildPdf,
+        );
+      },
     ),
   ],
 );

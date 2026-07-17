@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../core/utils/responsive_layout.dart';
 import '../data/student_repository.dart';
 import '../../groups/data/group_repository.dart';
 
@@ -40,6 +41,8 @@ class _StudentsSearchScreenState extends ConsumerState<StudentsSearchScreen> {
       'الصف الثاني الثانوي',
       'الصف الثالث الثانوي',
     ];
+
+    final crossAxisCount = ResponsiveLayout.getGridCrossAxisCount(context, mobile: 1, tablet: 2, desktop: 3);
 
     return Scaffold(
       appBar: AppBar(
@@ -89,10 +92,8 @@ class _StudentsSearchScreenState extends ConsumerState<StudentsSearchScreen> {
                     },
                   ),
                   const SizedBox(height: 8),
-                  // Dropdowns Row for filtering
                   Row(
                     children: [
-                      // Grade Filter
                       Expanded(
                         child: DropdownButtonFormField<String>(
                           value: filter.gradeLevel,
@@ -114,7 +115,6 @@ class _StudentsSearchScreenState extends ConsumerState<StudentsSearchScreen> {
                         ),
                       ),
                       const SizedBox(width: 8),
-                      // Group Filter
                       Expanded(
                         child: groupsListAsync.maybeWhen(
                           data: (groups) {
@@ -147,7 +147,7 @@ class _StudentsSearchScreenState extends ConsumerState<StudentsSearchScreen> {
             ),
             const Divider(height: 1),
 
-            // Search Results List
+            // Search Results
             Expanded(
               child: searchResultAsync.when(
                 data: (students) {
@@ -167,27 +167,24 @@ class _StudentsSearchScreenState extends ConsumerState<StudentsSearchScreen> {
                     );
                   }
 
+                  if (crossAxisCount > 1) {
+                    return GridView.builder(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: crossAxisCount,
+                        crossAxisSpacing: 12,
+                        mainAxisSpacing: 12,
+                        childAspectRatio: 2.8,
+                      ),
+                      itemCount: students.length,
+                      itemBuilder: (context, index) => _buildStudentCard(students[index]),
+                    );
+                  }
+
                   return ListView.builder(
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                     itemCount: students.length,
-                    itemBuilder: (context, index) {
-                      final student = students[index];
-                      final id = student['id'] as int;
-                      final name = student['name'] as String;
-                      final phone = student['phone'] ?? 'لا يوجد هاتف';
-                      final groupName = student['group_name'] as String;
-                      final grade = student['grade_level'] as String;
-
-                      return Card(
-                        margin: const EdgeInsets.only(bottom: 8),
-                        child: ListTile(
-                          title: Text(name, style: const TextStyle(fontWeight: FontWeight.bold)),
-                          subtitle: Text('$groupName • $grade • هاتف: $phone'),
-                          trailing: const Icon(Icons.arrow_back_ios, size: 14),
-                          onTap: () => context.push('/students/profile/$id').then((_) => _refreshList()),
-                        ),
-                      );
-                    },
+                    itemBuilder: (context, index) => _buildStudentCard(students[index]),
                   );
                 },
                 loading: () => const Center(child: CircularProgressIndicator()),
@@ -196,6 +193,28 @@ class _StudentsSearchScreenState extends ConsumerState<StudentsSearchScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildStudentCard(Map<String, dynamic> student) {
+    final id = student['id'] as int;
+    final name = student['name'] as String;
+    final phone = student['phone'] ?? 'لا يوجد هاتف';
+    final groupName = student['group_name'] as String;
+    final grade = student['grade_level'] as String;
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      child: ListTile(
+        leading: CircleAvatar(
+          backgroundColor: AppColors.primary.withOpacity(0.1),
+          child: const Icon(Icons.person, color: AppColors.primary),
+        ),
+        title: Text(name, style: const TextStyle(fontWeight: FontWeight.bold)),
+        subtitle: Text('$groupName • $grade • هاتف: $phone'),
+        trailing: const Icon(Icons.arrow_back_ios, size: 14),
+        onTap: () => context.push('/students/profile/$id').then((_) => _refreshList()),
       ),
     );
   }

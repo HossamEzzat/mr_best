@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:pdf/pdf.dart';
 import '../data/student_repository.dart';
 import '../../grades/data/grades_repository.dart';
 import '../../attendance/data/attendance_repository.dart';
 import '../../../core/utils/pdf_generator.dart';
 import '../../../core/theme/app_colors.dart';
-import '../../groups/presentation/group_details_screen.dart'; // to invalidate students list if deleted
+import '../../../core/utils/responsive_layout.dart';
+import '../../groups/presentation/group_details_screen.dart';
 
 class StudentProfileScreen extends ConsumerStatefulWidget {
   final int studentId;
@@ -84,7 +86,6 @@ class _StudentProfileScreenState extends ConsumerState<StudentProfileScreen> wit
           const SnackBar(content: Text('تم حفظ الملاحظات بنجاح'), backgroundColor: AppColors.present),
         );
         
-        // Refresh overview locally
         _studentOverview!['notes'] = updatedStudent.notes;
         ref.invalidate(groupStudentsProvider(_studentOverview!['group_id'] as int));
       }
@@ -97,22 +98,36 @@ class _StudentProfileScreenState extends ConsumerState<StudentProfileScreen> wit
     }
   }
 
-  Future<void> _generateReport() async {
+  void _openPdfPreview() {
     if (_studentOverview == null) return;
-    
-    // Add additional info needed by PdfGenerator
     final data = Map<String, dynamic>.from(_studentOverview!);
     data['grades_list'] = _gradesList;
-    
+    final name = data['name'] as String? ?? 'طالب';
+
+    context.push(
+      '/pdf/preview',
+      extra: {
+        'title': 'معاينة تقرير الطالب: $name',
+        'fileName': 'تقرير_الطالب_${name.replaceAll(' ', '_')}.pdf',
+        'buildPdf': (PdfPageFormat format) async => await PdfGenerator.generateStudentReportBytes(data),
+      },
+    );
+  }
+
+  Future<void> _shareDirectReport() async {
+    if (_studentOverview == null) return;
+    final data = Map<String, dynamic>.from(_studentOverview!);
+    data['grades_list'] = _gradesList;
+
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('جاري إعداد تقرير PDF...'), duration: Duration(seconds: 1)),
+      const SnackBar(content: Text('جاري تجهيز التقرير للمشاركة...'), duration: Duration(seconds: 1)),
     );
 
     try {
       await PdfGenerator.generateAndShareStudentReport(data);
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('فشل توليد التقرير: $e'), backgroundColor: AppColors.absent),
+        SnackBar(content: Text('فشل مشاركة التقرير: $e'), backgroundColor: AppColors.absent),
       );
     }
   }
@@ -142,218 +157,175 @@ class _StudentProfileScreenState extends ConsumerState<StudentProfileScreen> wit
 
     // Stats
     final attStats = _studentOverview!['attendance_stats'] as Map<String, dynamic>;
-    final commitmentRate = attStats['rate'] as double;
+    final commitmentRate = (attStats['rate'] as num).toDouble();
     final presentCount = attStats['present'] as int;
     final absentCount = attStats['absent'] as int;
 
     final gradeStats = _studentOverview!['grade_stats'] as Map<String, dynamic>;
-    final earnedPoints = gradeStats['earned_points'] as double;
-    final possiblePoints = gradeStats['possible_points'] as double;
-    final gradePercentage = gradeStats['percentage'] as double;
+    final earnedPoints = (gradeStats['earned_points'] as num).toDouble();
+    final possiblePoints = (gradeStats['possible_points'] as num).toDouble();
+    final gradePercentage = (gradeStats['percentage'] as num).toDouble();
 
-    final ranks = _studentOverview!['ranks'] as Map<String, int>;
+    final ranks = Map<String, dynamic>.from(_studentOverview!['ranks'] as Map);
     final groupRank = ranks['group_rank'] ?? 1;
     final gradeRank = ranks['grade_rank'] ?? 1;
+
+    final isWide = !ResponsiveLayout.isMobile(context);
 
     return Scaffold(
       appBar: AppBar(
         title: Text(name),
         actions: [
           IconButton(
-            icon: const Icon(Icons.edit),
-            onPressed: () => context.push('/students/edit/${widget.studentId}').then((_) => _loadData()),
+            icon: const Icon(Icons.picture_as_pdf),
+            tooltip: 'معاينة PDF',
+            onPressed: _openPdfPreview,
           ),
           IconButton(
             icon: const Icon(Icons.share, color: Colors.blue),
-            onPressed: _generateReport,
+            tooltip: 'مشاركة التقرير',
+            onPressed: _shareDirectReport,
+          ),
+          IconButton(
+            icon: const Icon(Icons.edit),
+            tooltip: 'تعديل البيانات',
+            onPressed: () => context.push('/students/edit/${widget.studentId}').then((_) => _loadData()),
           ),
         ],
       ),
       body: Directionality(
         textDirection: TextDirection.rtl,
-        child: Column(
+        child: ListView(
+          padding: const EdgeInsets.all(16.0),
           children: [
-            // Student Profile Header & Statistics Cards
-            Expanded(
-              child: ListView(
-                padding: const EdgeInsets.all(16.0),
+            // Responsive Row for Profile & Stats on wide screen
+            if (isWide)
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Profile Card
-                  Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(16.0),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              CircleAvatar(
-                                radius: 28,
-                                backgroundColor: AppColors.primary.withOpacity(0.1),
-                                child: const Icon(Icons.person, size: 32, color: AppColors.primary),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 20)),
-                                    Text('$groupName • $gradeLevel', style: TextStyle(color: Colors.grey[600])),
-                                    Text(school, style: TextStyle(color: Colors.grey[500], fontSize: 13)),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                          const Divider(height: 24),
-                          _buildDetailRow(Icons.phone, 'رقم الطالب:', phone),
-                          _buildDetailRow(Icons.family_restroom, 'ولي الأمر:', '$parentName ($parentPhone)'),
-                        ],
-                      ),
-                    ),
+                  Expanded(
+                    flex: 1,
+                    child: _buildProfileCard(name, groupName, gradeLevel, school, phone, parentName, parentPhone),
                   ),
-                  const SizedBox(height: 12),
-
-                  // Stats Panel
-                  Row(
-                    children: [
-                      // Grades Stats Card
-                      Expanded(
-                        child: Card(
-                          child: Padding(
-                            padding: const EdgeInsets.all(12.0),
-                            child: Column(
-                              children: [
-                                const Text('الأداء الدراسي', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.grey)),
-                                const SizedBox(height: 8),
-                                Text(
-                                  '${gradePercentage.toStringAsFixed(1)}%',
-                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 24, color: AppColors.primary),
-                                ),
-                                const SizedBox(height: 4),
-                                Text('$earnedPoints / $possiblePoints درجة', style: const TextStyle(fontSize: 12)),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      // Attendance Stats Card
-                      Expanded(
-                        child: Card(
-                          child: Padding(
-                            padding: const EdgeInsets.all(12.0),
-                            child: Column(
-                              children: [
-                                const Text('نسبة الالتزام', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.grey)),
-                                const SizedBox(height: 8),
-                                Text(
-                                  '${commitmentRate.toStringAsFixed(1)}%',
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 24,
-                                    color: commitmentRate > 80 ? AppColors.present : AppColors.late,
-                                  ),
-                                ),
-                                const SizedBox(height: 4),
-                                Text('$presentCount حضور • $absentCount غياب', style: const TextStyle(fontSize: 12)),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-
-                  // Ranks Panel
-                  Card(
-                    color: AppColors.primary.withOpacity(0.05),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceAround,
-                        children: [
-                          _buildRankWidget('الترتيب في المجموعة', groupRank),
-                          Container(width: 1, height: 40, color: Colors.grey[300]),
-                          _buildRankWidget('الترتيب على الصف', gradeRank),
-                        ],
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-
-                  // Notes section
-                  Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(12.0),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text('ملاحظات وتوجيهات المعلم:', style: TextStyle(fontWeight: FontWeight.bold)),
-                          const SizedBox(height: 8),
-                          TextField(
-                            controller: _notesController,
-                            maxLines: 2,
-                            decoration: const InputDecoration(
-                              hintText: 'اكتب ملاحظاتك عن مستوى الطالب هنا...',
-                              border: OutlineInputBorder(),
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Align(
-                            alignment: Alignment.centerLeft,
-                            child: ElevatedButton(
-                              style: ElevatedButton.styleFrom(
-                                minimumSize: const Size(120, 36),
-                                padding: const EdgeInsets.symmetric(horizontal: 16),
-                              ),
-                              onPressed: _isSavingNotes ? null : _saveNotes,
-                              child: _isSavingNotes
-                                  ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                                  : const Text('حفظ الملاحظة', style: TextStyle(fontSize: 12)),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-
-                  // Tabs for Detailed Logs
-                  TabBar(
-                    controller: _tabController,
-                    labelColor: AppColors.primary,
-                    unselectedLabelColor: Colors.grey,
-                    indicatorColor: AppColors.primary,
-                    tabs: const [
-                      Tab(text: 'سجل الدرجات'),
-                      Tab(text: 'سجل الحضور'),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-
-                  SizedBox(
-                    height: 300,
-                    child: TabBarView(
-                      controller: _tabController,
+                  const SizedBox(width: 16),
+                  Expanded(
+                    flex: 1,
+                    child: Column(
                       children: [
-                        _buildGradesList(),
-                        _buildAttendanceList(),
+                        _buildStatsCards(gradePercentage, earnedPoints, possiblePoints, commitmentRate, presentCount, absentCount),
+                        const SizedBox(height: 12),
+                        _buildRankWidget(groupRank, gradeRank),
                       ],
                     ),
-                  )
+                  ),
                 ],
+              )
+            else ...[
+              _buildProfileCard(name, groupName, gradeLevel, school, phone, parentName, parentPhone),
+              const SizedBox(height: 12),
+              _buildStatsCards(gradePercentage, earnedPoints, possiblePoints, commitmentRate, presentCount, absentCount),
+              const SizedBox(height: 10),
+              _buildRankWidget(groupRank, gradeRank),
+            ],
+
+            const SizedBox(height: 12),
+
+            // PDF Action Bar Card
+            Card(
+              color: AppColors.primary.withOpacity(0.08),
+              child: Padding(
+                padding: const EdgeInsets.all(12.0),
+                child: Row(
+                  children: [
+                    const CircleAvatar(
+                      backgroundColor: AppColors.primary,
+                      child: Icon(Icons.picture_as_pdf, color: Colors.white),
+                    ),
+                    const SizedBox(width: 12),
+                    const Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('تقرير الطالب PDF', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                          Text('استعراض مباشر مع إمكانية الطباعة والحفظ والمشاركة', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                        ],
+                      ),
+                    ),
+                    ElevatedButton.icon(
+                      onPressed: _openPdfPreview,
+                      icon: const Icon(Icons.visibility, size: 18),
+                      label: const Text('معاينة PDF'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primary,
+                        foregroundColor: Colors.white,
+                        minimumSize: const Size(110, 40),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
-            
-            // PDF report button at bottom
-            Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: ElevatedButton.icon(
-                onPressed: _generateReport,
-                icon: const Icon(Icons.share),
-                label: const Text('إرسال تقرير الأداء لولي الأمر عبر واتساب'),
+
+            const SizedBox(height: 12),
+
+            // Notes section
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(12.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('ملاحظات وتوجيهات المعلم:', style: TextStyle(fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: _notesController,
+                      maxLines: 2,
+                      decoration: const InputDecoration(
+                        hintText: 'اكتب ملاحظاتك عن مستوى الطالب هنا...',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          minimumSize: const Size(120, 36),
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                        ),
+                        onPressed: _isSavingNotes ? null : _saveNotes,
+                        child: _isSavingNotes
+                            ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                            : const Text('حفظ الملاحظة', style: TextStyle(fontSize: 12)),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            // Tabs for Detailed Logs
+            TabBar(
+              controller: _tabController,
+              labelColor: AppColors.primary,
+              unselectedLabelColor: Colors.grey,
+              indicatorColor: AppColors.primary,
+              tabs: const [
+                Tab(text: 'سجل الدرجات'),
+                Tab(text: 'سجل الحضور'),
+              ],
+            ),
+            const SizedBox(height: 8),
+
+            SizedBox(
+              height: 350,
+              child: TabBarView(
+                controller: _tabController,
+                children: [
+                  _buildGradesList(),
+                  _buildAttendanceList(),
+                ],
               ),
             ),
           ],
@@ -362,23 +334,110 @@ class _StudentProfileScreenState extends ConsumerState<StudentProfileScreen> wit
     );
   }
 
-  Widget _buildDetailRow(IconData icon, String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8.0),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, size: 18, color: Colors.grey[600]),
-          const SizedBox(width: 8),
-          Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
-          const SizedBox(width: 6),
-          Expanded(child: Text(value, style: TextStyle(color: Colors.grey[800]))),
-        ],
+  Widget _buildProfileCard(String name, String groupName, String gradeLevel, String school, String phone, String parentName, String parentPhone) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                CircleAvatar(
+                  radius: 28,
+                  backgroundColor: AppColors.primary.withOpacity(0.1),
+                  child: const Icon(Icons.person, size: 32, color: AppColors.primary),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 20)),
+                      Text('$groupName • $gradeLevel', style: TextStyle(color: Colors.grey[600])),
+                      Text(school, style: TextStyle(color: Colors.grey[500], fontSize: 13)),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const Divider(height: 24),
+            _buildDetailRow(Icons.phone, 'رقم الطالب:', phone),
+            _buildDetailRow(Icons.family_restroom, 'ولي الأمر:', '$parentName ($parentPhone)'),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildRankWidget(String title, int rank) {
+  Widget _buildStatsCards(double gradePercentage, double earnedPoints, double possiblePoints, double commitmentRate, int presentCount, int absentCount) {
+    return Row(
+      children: [
+        Expanded(
+          child: Card(
+            child: Padding(
+              padding: const EdgeInsets.all(12.0),
+              child: Column(
+                children: [
+                  const Text('الأداء الدراسي', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.grey)),
+                  const SizedBox(height: 8),
+                  Text(
+                    '${gradePercentage.toStringAsFixed(1)}%',
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 24, color: AppColors.primary),
+                  ),
+                  const SizedBox(height: 4),
+                  Text('$earnedPoints / $possiblePoints درجة', style: const TextStyle(fontSize: 12)),
+                ],
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Card(
+            child: Padding(
+              padding: const EdgeInsets.all(12.0),
+              child: Column(
+                children: [
+                  const Text('نسبة الالتزام', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.grey)),
+                  const SizedBox(height: 8),
+                  Text(
+                    '${commitmentRate.toStringAsFixed(1)}%',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 24,
+                      color: commitmentRate > 80 ? AppColors.present : AppColors.late,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text('$presentCount حضور • $absentCount غياب', style: const TextStyle(fontSize: 12)),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildRankWidget(dynamic groupRank, dynamic gradeRank) {
+    return Card(
+      color: AppColors.primary.withOpacity(0.05),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceAround,
+          children: [
+            _buildRankItem('الترتيب في المجموعة', groupRank),
+            Container(width: 1, height: 40, color: Colors.grey[300]),
+            _buildRankItem('الترتيب على الصف', gradeRank),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRankItem(String title, dynamic rank) {
     return Column(
       children: [
         Text(title, style: TextStyle(fontSize: 12, color: Colors.grey[600])),
@@ -398,21 +457,35 @@ class _StudentProfileScreenState extends ConsumerState<StudentProfileScreen> wit
     );
   }
 
+  Widget _buildDetailRow(IconData icon, String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8.0),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 18, color: Colors.grey[600]),
+          const SizedBox(width: 8),
+          Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
+          const SizedBox(width: 6),
+          Expanded(child: Text(value, style: TextStyle(color: Colors.grey[800]))),
+        ],
+      ),
+    );
+  }
+
   Widget _buildGradesList() {
     if (_gradesList.isEmpty) {
       return const Center(child: Text('لا توجد درجات مسجلة لهذا الطالب.'));
     }
 
     return ListView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
       itemCount: _gradesList.length,
       itemBuilder: (context, index) {
         final g = _gradesList[index];
         final title = g['task_title'] as String;
         final category = g['task_category'] as String;
-        final score = g['score'] as double;
-        final total = g['task_total_score'] as double;
+        final score = (g['score'] as num).toDouble();
+        final total = (g['task_total_score'] as num).toDouble();
         final date = g['task_date'] as String;
 
         return Card(
@@ -438,8 +511,6 @@ class _StudentProfileScreenState extends ConsumerState<StudentProfileScreen> wit
     }
 
     return ListView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
       itemCount: _attendanceList.length,
       itemBuilder: (context, index) {
         final a = _attendanceList[index];

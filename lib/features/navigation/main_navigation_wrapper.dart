@@ -4,6 +4,7 @@ import '../groups/presentation/groups_screen.dart';
 import '../students/presentation/students_search_screen.dart';
 import '../settings/presentation/settings_screen.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../core/utils/responsive_layout.dart';
 
 class MainNavigationWrapper extends StatefulWidget {
   const MainNavigationWrapper({super.key});
@@ -22,46 +23,96 @@ class _MainNavigationWrapperState extends State<MainNavigationWrapper> {
     SettingsScreen(),
   ];
 
+  final List<({IconData icon, IconData selectedIcon, String label})> _navItems = const [
+    (icon: Icons.dashboard_outlined, selectedIcon: Icons.dashboard, label: 'الرئيسية'),
+    (icon: Icons.class_outlined, selectedIcon: Icons.class_, label: 'المجموعات'),
+    (icon: Icons.search_outlined, selectedIcon: Icons.search, label: 'الطلاب'),
+    (icon: Icons.settings_outlined, selectedIcon: Icons.settings, label: 'الإعدادات'),
+  ];
+
   @override
   Widget build(BuildContext context) {
+    final isWide = !ResponsiveLayout.isMobile(context);
+
     return Scaffold(
-      body: IndexedStack(
-        index: _selectedIndex,
-        children: _screens,
-      ),
-      bottomNavigationBar: Directionality(
+      body: Directionality(
         textDirection: TextDirection.rtl,
-        child: NavigationBar(
-          selectedIndex: _selectedIndex,
-          onDestinationSelected: (index) {
-            setState(() {
-              _selectedIndex = index;
-            });
-          },
-          destinations: const [
-            NavigationDestination(
-              icon: Icon(Icons.dashboard_outlined),
-              selectedIcon: Icon(Icons.dashboard, color: AppColors.primary),
-              label: 'الرئيسية',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.class_outlined),
-              selectedIcon: Icon(Icons.class_, color: AppColors.primary),
-              label: 'المجموعات',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.search_outlined),
-              selectedIcon: Icon(Icons.search, color: AppColors.primary),
-              label: 'الطلاب',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.settings_outlined),
-              selectedIcon: Icon(Icons.settings, color: AppColors.primary),
-              label: 'الإعدادات',
+        child: Row(
+          children: [
+            if (isWide)
+              NavigationRail(
+                selectedIndex: _selectedIndex,
+                onDestinationSelected: (index) {
+                  setState(() {
+                    _selectedIndex = index;
+                  });
+                },
+                extended: ResponsiveLayout.isDesktop(context),
+                leading: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 16.0),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: AppColors.primary.withOpacity(0.1),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(Icons.school, color: AppColors.primary, size: 28),
+                      ),
+                      if (ResponsiveLayout.isDesktop(context)) ...[
+                        const SizedBox(width: 8),
+                        const Text(
+                          'مستر بيست',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 18,
+                            color: AppColors.primaryDark,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                destinations: _navItems.map((item) {
+                  return NavigationRailDestination(
+                    icon: Icon(item.icon),
+                    selectedIcon: Icon(item.selectedIcon, color: AppColors.primary),
+                    label: Text(item.label),
+                  );
+                }).toList(),
+              ),
+            if (isWide) const VerticalDivider(thickness: 1, width: 1),
+            Expanded(
+              child: IndexedStack(
+                index: _selectedIndex,
+                children: _screens,
+              ),
             ),
           ],
         ),
       ),
+      bottomNavigationBar: isWide
+          ? null
+          : Directionality(
+              textDirection: TextDirection.rtl,
+              child: NavigationBar(
+                selectedIndex: _selectedIndex,
+                onDestinationSelected: (index) {
+                  setState(() {
+                    _selectedIndex = index;
+                  });
+                },
+                destinations: _navItems.map((item) {
+                  return NavigationDestination(
+                    icon: Icon(item.icon),
+                    selectedIcon: Icon(item.selectedIcon, color: AppColors.primary),
+                    label: item.label,
+                  );
+                }).toList(),
+              ),
+            ),
     );
   }
 }
