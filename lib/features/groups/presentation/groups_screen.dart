@@ -79,6 +79,7 @@ class GroupsScreen extends ConsumerWidget {
         ),
       ),
       floatingActionButton: FloatingActionButton.extended(
+        heroTag: 'add_group_btn',
         onPressed: () => _showGroupDialog(context, ref),
         label: const Text('إضافة مجموعة'),
         icon: const Icon(Icons.add),

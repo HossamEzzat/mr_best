@@ -55,6 +55,7 @@ class _StudentsSearchScreenState extends ConsumerState<StudentsSearchScreen> {
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
+        heroTag: 'add_student_search_btn',
         onPressed: () => context.push('/students/add').then((_) => _refreshList()),
         label: const Text('طالب جديد'),
         icon: const Icon(Icons.person_add),
